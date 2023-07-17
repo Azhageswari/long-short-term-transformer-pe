@@ -34,7 +34,8 @@ class LSTR(nn.Module):
         self.num_classes = cfg.DATA.NUM_CLASSES
 
         # Build position encoding
-        self.pos_encoding = tr.PositionalEncoding(self.d_model, self.dropout)
+        # self.pos_encoding = tr.PositionalEncoding(self.d_model, self.dropout)
+        self.pos_encoding = tr.RelativePositionalEncoding(self.d_model, self.dropout)
 
         # Build LSTR encoder
         if self.long_enabled:
