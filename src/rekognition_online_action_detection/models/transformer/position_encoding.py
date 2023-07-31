@@ -27,19 +27,33 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[padding: padding + x.shape[0], :]
         return self.dropout(x)
 
-class RelativePositionalEncoding(nn.Module):
 
+class RelativePositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
         super(RelativePositionalEncoding, self).__init__()
-
         self.dropout = nn.Dropout(p=dropout)
+        self.d_model = d_model
+        self.max_len = max_len
 
-        pe = torch.arange(0, max_len * d_model).reshape(max_len, d_model)
-        pe = pe.unsqueeze(0).transpose(0, 1)
-        self.register_buffer('pe', pe)   
+        relative_position_matrix = torch.zeros(2 * max_len, d_model)
+
+        # Initialize the relative position matrix using sine and cosine functions
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        sinusoid_term = position * div_term
+        relative_position_matrix[:max_len, 0::2] = torch.sin(sinusoid_term)
+        relative_position_matrix[:max_len, 1::2] = torch.cos(sinusoid_term)
+        relative_position_matrix[max_len:, 0::2] = torch.sin(sinusoid_term)
+        relative_position_matrix[max_len:, 1::2] = torch.cos(sinusoid_term)
         print(f"RPE dim: {d_model}")
-        print(f"PE at (0,0): {pe[0][0]}")
+        relative_position_matrix = relative_position_matrix.unsqueeze(0).transpose(0, 1)
+        print(f"PE dim: {relative_position_matrix.shape}")
+        self.register_buffer('pe', relative_position_matrix) 
+        
 
-    def forward(self, x, padding=0):
-        x = x + self.pe[padding: padding + x.shape[0], :]
+    def forward(self, x, padding=0):        
+        # print(f"Input shape: {x.shape}, Padding: {padding}")
+        seq_len = x.shape[0]
+        relative_position_matrix_slice = self.pe[self.max_len - seq_len + padding:self.max_len + padding, :]
+        x = x + relative_position_matrix_slice
         return self.dropout(x)
