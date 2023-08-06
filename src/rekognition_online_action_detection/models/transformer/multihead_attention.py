@@ -8,13 +8,35 @@ import torch.nn.functional as F
 
 class DotProductAttention(nn.Module):
 
-    def __init__(self, dropout=0.0):
+    def __init__(self, head_dim, dropout=0.0, relative_position=False, max_len=5000):
         super(DotProductAttention, self).__init__()
 
         self.dropout = dropout
+        self.max_len = max_len
+        self.Er = nn.Parameter(torch.randn(max_len, head_dim))
+        self.relative_position = relative_position
+        
+    def skew(self, QEr):
+        # QEr.shape = (num_heads, seq_len, seq_len)
+        padded = F.pad(QEr, (1, 0))
+        # padded.shape = (num_heads, seq_len, 1 + seq_len)
+        num_heads, num_rows, num_cols = padded.shape
+        reshaped = padded.reshape(num_heads, num_cols, num_rows)
+        # reshaped.size = (num_heads, 1 + seq_len, seq_len)
+        Srel = reshaped[:, 1:, :]
+        # Srel.shape = (num_heads, seq_len, seq_len)
+        return Srel
 
     def forward(self, q, k, v, attn_mask=None):
         attn_output_weights = torch.bmm(q, k.transpose(1, 2))
+
+        if self.relative_position:
+            N = q.shape[1]
+            start = self.max_len - N
+            Er_t = self.Er[start:, :].transpose(0,1)
+            QEr = torch.matmul(q, Er_t)
+            Srel = self.skew(QEr)
+            attn_output_weights += Srel
 
         if attn_mask is not None:
             attn_output_weights += attn_mask
@@ -29,8 +51,8 @@ class DotProductAttention(nn.Module):
 
 class DotProductAttentionStream(DotProductAttention):
 
-    def __init__(self, dropout=0.0):
-        super(DotProductAttentionStream, self).__init__(dropout)
+    def __init__(self, head_dim, dropout=0.0, relative_position=False, max_len=5000):
+        super(DotProductAttentionStream, self).__init__(head_dim, dropout, relative_position, max_len)
 
         ############################
         # Cache for stream inference
@@ -64,7 +86,7 @@ class DotProductAttentionStream(DotProductAttention):
 
 class MultiheadAttention(nn.Module):
 
-    def __init__(self, embed_dim, num_heads, dropout=0.0, bias=True, kdim=None, vdim=None):
+    def __init__(self, embed_dim, num_heads, dropout=0.0, bias=True, kdim=None, vdim=None, relative_positional_encoding=False):
         super(MultiheadAttention, self).__init__()
 
         self.embed_dim = embed_dim
@@ -92,7 +114,7 @@ class MultiheadAttention(nn.Module):
             nn.init.constant_(self.in_proj_bias, 0.)
             nn.init.constant_(self.out_proj.bias, 0.)
 
-        self.dotproductattention = DotProductAttention(dropout)
+        self.dotproductattention = DotProductAttention(head_dim=int(embed_dim/num_heads), dropout=dropout, relative_position=relative_positional_encoding)
 
     def forward(self, q, k, v, attn_mask=None, key_padding_mask=None):
         tsz, bsz, embed_dim = q.shape[0], q.shape[1], q.shape[2]
@@ -159,10 +181,10 @@ class MultiheadAttention(nn.Module):
 
 class MultiheadAttentionStream(MultiheadAttention):
 
-    def __init__(self, embed_dim, num_heads, dropout=0.0, bias=True, kdim=None, vdim=None):
-        super(MultiheadAttentionStream, self).__init__(embed_dim, num_heads, dropout, bias, kdim, vdim)
+    def __init__(self, embed_dim, num_heads, dropout=0.0, bias=True, kdim=None, vdim=None, relative_positional_encoding=False):
+        super(MultiheadAttentionStream, self).__init__(embed_dim, num_heads, dropout, bias, kdim, vdim, relative_positional_encoding)
 
-        self.dotproductattention = DotProductAttentionStream(dropout)
+        self.dotproductattention = DotProductAttentionStream(head_dim=int(embed_dim/num_heads), dropout=dropout, relative_position=relative_positional_encoding)
 
         ############################
         # Cache for stream inference

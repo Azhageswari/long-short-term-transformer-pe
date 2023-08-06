@@ -34,8 +34,8 @@ class LSTR(nn.Module):
         self.num_classes = cfg.DATA.NUM_CLASSES
 
         # Build position encoding
-        # self.pos_encoding = tr.PositionalEncoding(self.d_model, self.dropout)
-        self.pos_encoding = tr.RelativePositionalEncoding(self.d_model, self.dropout)
+        self.abs_pos_enc = False
+        self.pos_encoding = tr.PositionalEncoding(self.d_model, self.dropout)
 
         # Build LSTR encoder
         if self.long_enabled:
@@ -82,10 +82,17 @@ class LSTR(nn.Module):
     def forward(self, visual_inputs, motion_inputs, memory_key_padding_mask=None):
         if self.long_enabled:
             # Compute long memories
-            long_memories = self.pos_encoding(self.feature_head_long(
-                visual_inputs[:, :self.long_memory_num_samples],
-                motion_inputs[:, :self.long_memory_num_samples],
-            ).transpose(0, 1))
+            
+            if self.abs_pos_enc:
+                long_memories = self.pos_encoding(self.feature_head_long(
+                    visual_inputs[:, :self.long_memory_num_samples],
+                    motion_inputs[:, :self.long_memory_num_samples],
+                ).transpose(0, 1))
+            else:
+                long_memories = self.feature_head_long(
+                    visual_inputs[:, :self.long_memory_num_samples],
+                    motion_inputs[:, :self.long_memory_num_samples],
+                ).transpose(0, 1)
 
             if len(self.enc_modules) > 0:
                 enc_queries = [
@@ -112,10 +119,17 @@ class LSTR(nn.Module):
 
         if self.work_enabled:
             # Compute work memories
-            work_memories = self.pos_encoding(self.feature_head_work(
-                visual_inputs[:, self.long_memory_num_samples:],
-                motion_inputs[:, self.long_memory_num_samples:],
-            ).transpose(0, 1), padding=self.long_memory_num_samples)
+            
+            if self.abs_pos_enc:
+                work_memories = self.pos_encoding(self.feature_head_work(
+                    visual_inputs[:, self.long_memory_num_samples:],
+                    motion_inputs[:, self.long_memory_num_samples:],
+                ).transpose(0, 1), padding=self.long_memory_num_samples)
+            else:
+                work_memories = self.feature_head_work(
+                    visual_inputs[:, self.long_memory_num_samples:],
+                    motion_inputs[:, self.long_memory_num_samples:],
+                ).transpose(0, 1)
 
             # Build mask
             mask = tr.generate_square_subsequent_mask(
@@ -177,7 +191,11 @@ class LSTRStream(LSTR):
                 ))
 
             long_memories = self.long_memories_cache
-            pos = self.pos_encoding.pe[:self.long_memory_num_samples, :]
+            
+            if self.abs_pos_enc:
+                pos = self.pos_encoding.pe[:self.long_memory_num_samples, :]
+            else:
+                pos = None
 
             enc_queries = [
                 enc_query.weight.unsqueeze(1).repeat(1, long_memories.shape[1], 1)
@@ -216,10 +234,17 @@ class LSTRStream(LSTR):
 
         if self.work_enabled:
             # Compute work memories
-            work_memories = self.pos_encoding(self.feature_head_work(
-                work_visual_inputs,
-                work_motion_inputs,
-            ).transpose(0, 1), padding=self.long_memory_num_samples)
+            
+            if self.abs_pos_enc:
+                work_memories = self.pos_encoding(self.feature_head_work(
+                    work_visual_inputs,
+                    work_motion_inputs,
+                ).transpose(0, 1), padding=self.long_memory_num_samples)
+            else:
+                work_memories = self.feature_head_work(
+                    work_visual_inputs,
+                    work_motion_inputs,
+                ).transpose(0, 1)
 
             # Build mask
             mask = tr.generate_square_subsequent_mask(

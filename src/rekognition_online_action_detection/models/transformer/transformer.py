@@ -156,8 +156,8 @@ class TransformerDecoderLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation='relu'):
         super(TransformerDecoderLayer, self).__init__()
-
-        self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        
+        self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout, relative_positional_encoding=False)
         self.multihead_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
 
         # Implementation of Feedforward model
